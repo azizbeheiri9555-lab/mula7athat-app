@@ -1,4 +1,4 @@
-// App.js - تطبيق ملاحظات متكامل مع معالج زر الرجوع
+// App.js - تطبيق ملاحظات متكامل مع تذكيرات وأصوات
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList,
@@ -6,6 +6,17 @@ import {
   KeyboardAvoidingView, Platform, Dimensions
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+// إعدادات الإشعارات
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 const COLORS = [
   { id: 'white', name: 'أبيض', bg: '#ffffff', text: '#333333', icon: '⚪' },
@@ -44,7 +55,7 @@ export default function App() {
   const [currentNote, setCurrentNote] = useState({
     id: null, title: '', content: '', color: COLORS[0], tags: [],
     checklist: [], links: [], isLocked: false, lockPassword: '',
-    isPinned: false, isFavorite: false
+    isPinned: false, isFavorite: false, reminder: null, reminderType: null
   });
   
   const [checklistItem, setChecklistItem] = useState('');
@@ -59,50 +70,76 @@ export default function App() {
   const [unlockPasswordInput, setUnlockPasswordInput] = useState('');
   const [pendingUnlockNote, setPendingUnlockNote] = useState(null);
   
+  // متغيرات التذكيرات
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [selectedReminderDate, setSelectedReminderDate] = useState(new Date());
+  const [reminderNoteId, setReminderNoteId] = useState(null);
+  const [reminderType, setReminderType] = useState('once');
+  
   const [isBackingUp, setIsBackingUp] = useState(false);
 
-  useEffect(() => { loadData(); loadDarkMode(); }, []);
+  // طلب إذن الإشعارات عند بدء التطبيق
+  useEffect(() => {
+    loadData();
+    loadDarkMode();
+    requestNotificationPermissions();
+    setupNotificationChannel();
+  }, []);
 
-  // ==================== معالج زر الرجوع في الهاتف ====================
+  // طلب إذن الإشعارات
+  const requestNotificationPermissions = async () => {
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== 'granted') {
+      console.log('لم يتم منح إذن الإشعارات');
+    }
+  };
+
+  // إنشاء قناة الإشعارات لأندرويد
+  const setupNotificationChannel = async () => {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('reminders', {
+        name: 'تذكيرات الملاحظات',
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+        vibrationPattern: [0, 500, 300, 500],
+        enableVibrate: true,
+      });
+    }
+  };
+
+  // ==================== معالج زر الرجوع ====================
   useEffect(() => {
     const backAction = () => {
-      if (selectedFolder) {
-        // إذا كان هناك مجلد مفتوح، نغلق المجلد ونعود للقائمة الرئيسية
-        setSelectedFolder(null);
-        setNotes([]);
-        setSearchQuery('');
-        return true;
-      } else if (noteViewVisible) {
-        // إذا كانت نافذة عرض الملاحظة مفتوحة، نغلقها
+      if (noteViewVisible) {
         setNoteViewVisible(false);
         return true;
       } else if (editModalVisible) {
-        // إذا كانت نافذة التعديل مفتوحة، نغلقها
         setEditModalVisible(false);
         return true;
       } else if (showTrash) {
-        // إذا كانت سلة المحذوفات مفتوحة، نغلقها
         setShowTrash(false);
         return true;
       } else if (showStats) {
-        // إذا كانت الإحصائيات مفتوحة، نغلقها
         setShowStats(false);
         return true;
       } else if (lockModalVisible) {
-        // إذا كانت نافذة القفل مفتوحة، نغلقها
         setLockModalVisible(false);
         setLockPasswordInput('');
         setUnlockPasswordInput('');
         setPendingUnlockNote(null);
         return true;
       } else if (folderModalVisible) {
-        // إذا كانت نافذة إنشاء مجلد مفتوحة، نغلقها
         setFolderModalVisible(false);
         setEditingFolder(null);
         setNewFolderName('');
         return true;
+      } else if (selectedFolder) {
+        setSelectedFolder(null);
+        setNotes([]);
+        setSearchQuery('');
+        return true;
       } else {
-        // إذا كنا في الصفحة الرئيسية، نخرج من التطبيق
         BackHandler.exitApp();
         return true;
       }
@@ -110,11 +147,12 @@ export default function App() {
 
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
-  }, [selectedFolder, noteViewVisible, editModalVisible, showTrash, showStats, lockModalVisible, folderModalVisible]);
+  }, [noteViewVisible, editModalVisible, showTrash, showStats, lockModalVisible, folderModalVisible, selectedFolder]);
 
+  // تحميل البيانات
   const loadData = async () => {
     try {
-      const savedFolders = await AsyncStorage.getItem('@smart_folders_v15');
+      const savedFolders = await AsyncStorage.getItem('@smart_folders_v16');
       if (savedFolders) setFolders(JSON.parse(savedFolders));
       else {
         const defaultFolders = [
@@ -122,15 +160,15 @@ export default function App() {
           { id: '2', name: 'شخصي', color: COLORS[1], notes: [] },
         ];
         setFolders(defaultFolders);
-        await AsyncStorage.setItem('@smart_folders_v15', JSON.stringify(defaultFolders));
+        await AsyncStorage.setItem('@smart_folders_v16', JSON.stringify(defaultFolders));
       }
-      const savedTrash = await AsyncStorage.getItem('@smart_trash_v13');
+      const savedTrash = await AsyncStorage.getItem('@smart_trash_v14');
       if (savedTrash) setTrash(JSON.parse(savedTrash));
     } catch (error) {}
   };
 
-  const saveFolders = async (newFolders) => { await AsyncStorage.setItem('@smart_folders_v15', JSON.stringify(newFolders)); };
-  const saveTrash = async (newTrash) => { await AsyncStorage.setItem('@smart_trash_v13', JSON.stringify(newTrash)); };
+  const saveFolders = async (newFolders) => { await AsyncStorage.setItem('@smart_folders_v16', JSON.stringify(newFolders)); };
+  const saveTrash = async (newTrash) => { await AsyncStorage.setItem('@smart_trash_v14', JSON.stringify(newTrash)); };
   
   const loadDarkMode = async () => { const saved = await AsyncStorage.getItem('@dark_mode'); if (saved !== null) setDarkMode(JSON.parse(saved)); };
   const toggleDarkMode = async () => { const newMode = !darkMode; setDarkMode(newMode); await AsyncStorage.setItem('@dark_mode', JSON.stringify(newMode)); };
@@ -162,7 +200,7 @@ export default function App() {
     setCurrentNote({
       id: null, title: '', content: '', color: selectedFolder?.color || COLORS[0],
       tags: [], checklist: [], links: [], isLocked: false, lockPassword: '',
-      isPinned: false, isFavorite: false
+      isPinned: false, isFavorite: false, reminder: null, reminderType: null
     });
     setChecklistItem('');
     setLinkInput('');
@@ -267,6 +305,144 @@ export default function App() {
     }
   };
 
+  // ==================== دوال التذكيرات المتقدمة ====================
+  
+  const findNoteById = (noteId) => {
+    for (const folder of folders) {
+      const note = folder.notes.find(n => n.id === noteId);
+      if (note) return note;
+    }
+    return null;
+  };
+
+  const showReminderOptions = (noteId) => {
+    setReminderNoteId(noteId);
+    Alert.alert(
+      '⏰ إعداد التذكير',
+      'اختر نوع التذكير:',
+      [
+        { text: 'مرة واحدة', onPress: () => { setReminderType('once'); setShowDatePicker(true); } },
+        { text: 'يومياً', onPress: () => { setReminderType('daily'); setShowDatePicker(true); } },
+        { text: 'أسبوعياً', onPress: () => { setReminderType('weekly'); setShowDatePicker(true); } },
+        { text: 'شهرياً', onPress: () => { setReminderType('monthly'); setShowDatePicker(true); } },
+        { text: 'إلغاء التذكير', onPress: () => removeReminder(noteId), style: 'destructive' },
+        { text: 'إلغاء', style: 'cancel' },
+      ]
+    );
+  };
+
+  const onDateChange = (event, selectedDate) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      setSelectedReminderDate(selectedDate);
+      setShowTimePicker(true);
+    }
+  };
+
+  const onTimeChange = async (event, selectedTime) => {
+    setShowTimePicker(false);
+    if (selectedTime) {
+      const reminderDateTime = new Date(selectedReminderDate);
+      reminderDateTime.setHours(selectedTime.getHours(), selectedTime.getMinutes());
+      
+      // التحقق من أن الوقت في المستقبل للتذكير لمرة واحدة
+      if (reminderType === 'once' && reminderDateTime <= new Date()) {
+        Alert.alert('تنبيه', 'الرجاء اختيار وقت في المستقبل');
+        return;
+      }
+      
+      let trigger;
+      switch (reminderType) {
+        case 'once':
+          trigger = { date: reminderDateTime, channelId: 'reminders' };
+          break;
+        case 'daily':
+          trigger = {
+            hour: reminderDateTime.getHours(),
+            minute: reminderDateTime.getMinutes(),
+            repeats: true,
+            channelId: 'reminders',
+          };
+          break;
+        case 'weekly':
+          trigger = {
+            hour: reminderDateTime.getHours(),
+            minute: reminderDateTime.getMinutes(),
+            weekday: reminderDateTime.getDay() + 1,
+            repeats: true,
+            channelId: 'reminders',
+          };
+          break;
+        case 'monthly':
+          trigger = {
+            hour: reminderDateTime.getHours(),
+            minute: reminderDateTime.getMinutes(),
+            day: reminderDateTime.getDate(),
+            repeats: true,
+            channelId: 'reminders',
+          };
+          break;
+        default:
+          trigger = { date: reminderDateTime, channelId: 'reminders' };
+      }
+      
+      // تحديث الملاحظة بإضافة التذكير
+      const updatedFolders = folders.map(folder => 
+        folder.id === selectedFolder.id ? {
+          ...folder,
+          notes: folder.notes.map(note => 
+            note.id === reminderNoteId ? { 
+              ...note, 
+              reminder: reminderDateTime.toISOString(),
+              reminderType: reminderType
+            } : note
+          )
+        } : folder
+      );
+      
+      setFolders(updatedFolders);
+      saveFolders(updatedFolders);
+      
+      // جدولة الإشعار
+      const note = findNoteById(reminderNoteId);
+      if (note) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '📝 تذكير من تطبيق ملاحظات',
+            body: note.title,
+            sound: true,
+            data: { noteId: reminderNoteId },
+          },
+          trigger: trigger,
+        });
+      }
+      
+      Alert.alert('تم', 'تم تعيين التذكير بنجاح');
+    }
+    setReminderNoteId(null);
+  };
+
+  const removeReminder = async (noteId) => {
+    const updatedFolders = folders.map(folder => 
+      folder.id === selectedFolder.id ? {
+        ...folder,
+        notes: folder.notes.map(note => 
+          note.id === noteId ? { ...note, reminder: null, reminderType: null } : note
+        )
+      } : folder
+    );
+    
+    setFolders(updatedFolders);
+    saveFolders(updatedFolders);
+    
+    // إلغاء جميع الإشعارات (في تطبيق حقيقي، يمكن إلغاء إشعار محدد)
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    
+    Alert.alert('تم', 'تم إلغاء التذكير');
+  };
+
+  // ==================== الروابط وقوائم المهام ====================
+  
   const addLink = () => {
     if (!linkInput.trim()) return;
     const finalName = linkName.trim() || 'رابط';
@@ -307,10 +483,15 @@ export default function App() {
         shareText += `\n🔗 روابط:\n`;
         note.links.forEach(l => shareText += `• ${l.name}: ${l.url}\n`);
       }
+      if (note.reminder) {
+        shareText += `\n⏰ تذكير: ${new Date(note.reminder).toLocaleString('ar-SA')}\n`;
+      }
       await Share.share({ message: shareText, title: note.title });
     } catch (error) {}
   };
 
+  // ==================== نظام القفل ====================
+  
   const showLockSetup = () => {
     setLockPasswordInput('');
     setLockModalVisible(true);
@@ -352,7 +533,7 @@ export default function App() {
   };
 
   const getStats = () => {
-    let totalNotes = 0, totalWords = 0, totalChecklists = 0, totalLinks = 0;
+    let totalNotes = 0, totalWords = 0, totalChecklists = 0, totalLinks = 0, totalReminders = 0;
     let pinnedCount = 0, favoriteCount = 0;
     folders.forEach(f => {
       totalNotes += f.notes.length;
@@ -360,11 +541,12 @@ export default function App() {
         totalWords += (n.content || '').split(' ').length; 
         totalChecklists += n.checklist?.length || 0;
         totalLinks += n.links?.length || 0;
+        if (n.reminder) totalReminders++;
         if (n.isPinned) pinnedCount++;
         if (n.isFavorite) favoriteCount++;
       });
     });
-    return { totalNotes, totalFolders: folders.length, totalWords, totalChecklists, totalLinks, totalTrash: trash.length, pinnedCount, favoriteCount };
+    return { totalNotes, totalFolders: folders.length, totalWords, totalChecklists, totalLinks, totalReminders, totalTrash: trash.length, pinnedCount, favoriteCount };
   };
   const stats = getStats();
 
@@ -405,6 +587,7 @@ export default function App() {
           {item.isPinned && <Text style={{ fontSize: 14, marginLeft: 5 }}>📌</Text>}
           {item.isFavorite && <Text style={{ fontSize: 14, marginLeft: 5 }}>⭐</Text>}
           {item.isLocked && <Text style={{ fontSize: 14, marginLeft: 5 }}>🔒</Text>}
+          {item.reminder && <Text style={{ fontSize: 14, marginLeft: 5 }}>⏰</Text>}
         </View>
       </View>
       <Text style={[styles.noteTitle, { color: item.color?.text || colors.text }]}>{item.title}</Text>
@@ -458,6 +641,9 @@ export default function App() {
             </TouchableOpacity>
             <Text style={[styles.fullScreenTitle, { color: viewOnlyNote?.color?.text || colors.text }]}>{viewOnlyNote?.title}</Text>
             <View style={styles.fullScreenActions}>
+              <TouchableOpacity onPress={() => showReminderOptions(viewOnlyNote?.id)} style={styles.actionIcon}>
+                <Text style={{ fontSize: 22, color: viewOnlyNote?.reminder ? colors.success : colors.text }}>⏰</Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => togglePinNote(viewOnlyNote?.id, true)} style={styles.actionIcon}>
                 <Text style={{ fontSize: 22, color: viewOnlyNote?.isPinned ? colors.warning : colors.text }}>📌</Text>
               </TouchableOpacity>
@@ -498,12 +684,41 @@ export default function App() {
               </View>
             )}
             
+            {viewOnlyNote?.reminder && (
+              <View style={[styles.reminderInfo, { backgroundColor: 'rgba(108,99,255,0.1)' }]}>
+                <Text style={{ fontSize: 14, color: colors.primary }}>⏰ تذكير: {new Date(viewOnlyNote.reminder).toLocaleString('ar-SA')}</Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                  نوع التكرار: {viewOnlyNote.reminderType === 'once' ? 'مرة واحدة' : 
+                    viewOnlyNote.reminderType === 'daily' ? 'يومياً' : 
+                    viewOnlyNote.reminderType === 'weekly' ? 'أسبوعياً' : 'شهرياً'}
+                </Text>
+              </View>
+            )}
+            
             <Text style={[styles.fullScreenDate, { color: (viewOnlyNote?.color?.text || colors.text) + '99' }]}>
               📅 {viewOnlyNote?.date}
             </Text>
           </ScrollView>
         </View>
       </Modal>
+      
+      {/* منتقي التاريخ والوقت */}
+      {showDatePicker && (
+        <DateTimePicker
+          value={selectedReminderDate}
+          mode="date"
+          display="default"
+          onChange={onDateChange}
+        />
+      )}
+      {showTimePicker && (
+        <DateTimePicker
+          value={selectedReminderDate}
+          mode="time"
+          display="default"
+          onChange={onTimeChange}
+        />
+      )}
       
       {/* المحتوى الرئيسي */}
       <View style={styles.header}>
@@ -535,11 +750,12 @@ export default function App() {
           <View style={styles.statsRow}>
             <View style={styles.statItem}><Text style={[styles.statNumber, { color: '#8b5cf6' }]}>{stats.totalChecklists}</Text><Text>مهام</Text></View>
             <View style={styles.statItem}><Text style={[styles.statNumber, { color: '#ec4899' }]}>{stats.totalLinks}</Text><Text>روابط</Text></View>
-            <View style={styles.statItem}><Text style={[styles.statNumber, { color: colors.danger }]}>{stats.totalTrash}</Text><Text>محذوفة</Text></View>
+            <View style={styles.statItem}><Text style={[styles.statNumber, { color: colors.success }]}>{stats.totalReminders}</Text><Text>تذكيرات</Text></View>
           </View>
           <View style={styles.statsRow}>
             <View style={styles.statItem}><Text style={[styles.statNumber, { color: '#f59e0b' }]}>{stats.pinnedCount}</Text><Text>مثبتة</Text></View>
             <View style={styles.statItem}><Text style={[styles.statNumber, { color: '#10b981' }]}>{stats.favoriteCount}</Text><Text>مفضلة</Text></View>
+            <View style={styles.statItem}><Text style={[styles.statNumber, { color: colors.danger }]}>{stats.totalTrash}</Text><Text>محذوفة</Text></View>
           </View>
         </View>
       )}
@@ -732,6 +948,8 @@ const styles = StyleSheet.create({
   lockRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   modalBtn: { padding: 14, borderRadius: 12, alignItems: 'center', marginHorizontal: 5 },
   modalBtnText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
+  
+  reminderInfo: { marginTop: 10, marginBottom: 20, padding: 15, borderRadius: 15, alignItems: 'center' },
   
   rowIcons: { flexDirection: 'row', justifyContent: 'center', gap: 20, marginBottom: 15 },
   iconRowBtn: { alignItems: 'center', padding: 8 },
