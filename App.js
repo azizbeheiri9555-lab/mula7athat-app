@@ -1,4 +1,4 @@
-// App.js - تطبيق ملاحظات متكامل مع تذكيرات وأصوات
+// App.js - تطبيق ملاحظات مع تذكيرات (نسخة مصححة)
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList,
@@ -14,7 +14,7 @@ Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
-    shouldSetBadge: true,
+    shouldSetBadge: false,
   }),
 });
 
@@ -87,28 +87,7 @@ export default function App() {
     setupNotificationChannel();
   }, []);
 
-  // طلب إذن الإشعارات
-  const requestNotificationPermissions = async () => {
-    const { status } = await Notifications.requestPermissionsAsync();
-    if (status !== 'granted') {
-      console.log('لم يتم منح إذن الإشعارات');
-    }
-  };
-
-  // إنشاء قناة الإشعارات لأندرويد
-  const setupNotificationChannel = async () => {
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('reminders', {
-        name: 'تذكيرات الملاحظات',
-        importance: Notifications.AndroidImportance.HIGH,
-        sound: 'default',
-        vibrationPattern: [0, 500, 300, 500],
-        enableVibrate: true,
-      });
-    }
-  };
-
-  // ==================== معالج زر الرجوع ====================
+  // معالج زر الرجوع
   useEffect(() => {
     const backAction = () => {
       if (noteViewVisible) {
@@ -149,7 +128,155 @@ export default function App() {
     return () => backHandler.remove();
   }, [noteViewVisible, editModalVisible, showTrash, showStats, lockModalVisible, folderModalVisible, selectedFolder]);
 
-  // تحميل البيانات
+  // دوال الإشعارات
+  const requestNotificationPermissions = async () => {
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== 'granted') {
+      console.log('لم يتم منح إذن الإشعارات');
+    }
+  };
+
+  const setupNotificationChannel = async () => {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('reminders', {
+        name: 'تذكيرات الملاحظات',
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+        vibrationPattern: [0, 500, 300, 500],
+        enableVibrate: true,
+      });
+    }
+  };
+
+  const findNoteById = (noteId) => {
+    for (const folder of folders) {
+      const note = folder.notes.find(n => n.id === noteId);
+      if (note) return note;
+    }
+    return null;
+  };
+
+  const showReminderOptions = (noteId) => {
+    setReminderNoteId(noteId);
+    Alert.alert(
+      '⏰ إعداد التذكير',
+      'اختر نوع التذكير:',
+      [
+        { text: 'مرة واحدة', onPress: () => { setReminderType('once'); setShowDatePicker(true); } },
+        { text: 'يومياً', onPress: () => { setReminderType('daily'); setShowDatePicker(true); } },
+        { text: 'أسبوعياً', onPress: () => { setReminderType('weekly'); setShowDatePicker(true); } },
+        { text: 'شهرياً', onPress: () => { setReminderType('monthly'); setShowDatePicker(true); } },
+        { text: 'إلغاء التذكير', onPress: () => removeReminder(noteId), style: 'destructive' },
+        { text: 'إلغاء', style: 'cancel' },
+      ]
+    );
+  };
+
+  const onDateChange = (event, selectedDate) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      setSelectedReminderDate(selectedDate);
+      setShowTimePicker(true);
+    }
+  };
+
+  const onTimeChange = async (event, selectedTime) => {
+    setShowTimePicker(false);
+    if (selectedTime) {
+      const reminderDateTime = new Date(selectedReminderDate);
+      reminderDateTime.setHours(selectedTime.getHours(), selectedTime.getMinutes());
+      
+      if (reminderType === 'once' && reminderDateTime <= new Date()) {
+        Alert.alert('تنبيه', 'الرجاء اختيار وقت في المستقبل');
+        return;
+      }
+      
+      let trigger;
+      switch (reminderType) {
+        case 'once':
+          trigger = { date: reminderDateTime, channelId: 'reminders' };
+          break;
+        case 'daily':
+          trigger = {
+            hour: reminderDateTime.getHours(),
+            minute: reminderDateTime.getMinutes(),
+            repeats: true,
+            channelId: 'reminders',
+          };
+          break;
+        case 'weekly':
+          trigger = {
+            hour: reminderDateTime.getHours(),
+            minute: reminderDateTime.getMinutes(),
+            weekday: reminderDateTime.getDay() + 1,
+            repeats: true,
+            channelId: 'reminders',
+          };
+          break;
+        case 'monthly':
+          trigger = {
+            hour: reminderDateTime.getHours(),
+            minute: reminderDateTime.getMinutes(),
+            day: reminderDateTime.getDate(),
+            repeats: true,
+            channelId: 'reminders',
+          };
+          break;
+        default:
+          trigger = { date: reminderDateTime, channelId: 'reminders' };
+      }
+      
+      const updatedFolders = folders.map(folder => 
+        folder.id === selectedFolder.id ? {
+          ...folder,
+          notes: folder.notes.map(note => 
+            note.id === reminderNoteId ? { 
+              ...note, 
+              reminder: reminderDateTime.toISOString(),
+              reminderType: reminderType
+            } : note
+          )
+        } : folder
+      );
+      
+      setFolders(updatedFolders);
+      saveFolders(updatedFolders);
+      
+      const note = findNoteById(reminderNoteId);
+      if (note) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '📝 تذكير من تطبيق ملاحظات',
+            body: note.title,
+            sound: true,
+            data: { noteId: reminderNoteId },
+          },
+          trigger: trigger,
+        });
+      }
+      
+      Alert.alert('تم', 'تم تعيين التذكير بنجاح');
+    }
+    setReminderNoteId(null);
+  };
+
+  const removeReminder = async (noteId) => {
+    const updatedFolders = folders.map(folder => 
+      folder.id === selectedFolder.id ? {
+        ...folder,
+        notes: folder.notes.map(note => 
+          note.id === noteId ? { ...note, reminder: null, reminderType: null } : note
+        )
+      } : folder
+    );
+    
+    setFolders(updatedFolders);
+    saveFolders(updatedFolders);
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    Alert.alert('تم', 'تم إلغاء التذكير');
+  };
+
+  // تحميل وحفظ البيانات
   const loadData = async () => {
     try {
       const savedFolders = await AsyncStorage.getItem('@smart_folders_v16');
@@ -167,11 +294,24 @@ export default function App() {
     } catch (error) {}
   };
 
-  const saveFolders = async (newFolders) => { await AsyncStorage.setItem('@smart_folders_v16', JSON.stringify(newFolders)); };
-  const saveTrash = async (newTrash) => { await AsyncStorage.setItem('@smart_trash_v14', JSON.stringify(newTrash)); };
+  const saveFolders = async (newFolders) => { 
+    await AsyncStorage.setItem('@smart_folders_v16', JSON.stringify(newFolders)); 
+  };
   
-  const loadDarkMode = async () => { const saved = await AsyncStorage.getItem('@dark_mode'); if (saved !== null) setDarkMode(JSON.parse(saved)); };
-  const toggleDarkMode = async () => { const newMode = !darkMode; setDarkMode(newMode); await AsyncStorage.setItem('@dark_mode', JSON.stringify(newMode)); };
+  const saveTrash = async (newTrash) => { 
+    await AsyncStorage.setItem('@smart_trash_v14', JSON.stringify(newTrash)); 
+  };
+  
+  const loadDarkMode = async () => { 
+    const saved = await AsyncStorage.getItem('@dark_mode'); 
+    if (saved !== null) setDarkMode(JSON.parse(saved)); 
+  };
+  
+  const toggleDarkMode = async () => { 
+    const newMode = !darkMode; 
+    setDarkMode(newMode); 
+    await AsyncStorage.setItem('@dark_mode', JSON.stringify(newMode)); 
+  };
 
   const addFolder = () => {
     if (!newFolderName.trim()) return Alert.alert('تنبيه', 'أدخل اسم المجلد');
@@ -305,144 +445,6 @@ export default function App() {
     }
   };
 
-  // ==================== دوال التذكيرات المتقدمة ====================
-  
-  const findNoteById = (noteId) => {
-    for (const folder of folders) {
-      const note = folder.notes.find(n => n.id === noteId);
-      if (note) return note;
-    }
-    return null;
-  };
-
-  const showReminderOptions = (noteId) => {
-    setReminderNoteId(noteId);
-    Alert.alert(
-      '⏰ إعداد التذكير',
-      'اختر نوع التذكير:',
-      [
-        { text: 'مرة واحدة', onPress: () => { setReminderType('once'); setShowDatePicker(true); } },
-        { text: 'يومياً', onPress: () => { setReminderType('daily'); setShowDatePicker(true); } },
-        { text: 'أسبوعياً', onPress: () => { setReminderType('weekly'); setShowDatePicker(true); } },
-        { text: 'شهرياً', onPress: () => { setReminderType('monthly'); setShowDatePicker(true); } },
-        { text: 'إلغاء التذكير', onPress: () => removeReminder(noteId), style: 'destructive' },
-        { text: 'إلغاء', style: 'cancel' },
-      ]
-    );
-  };
-
-  const onDateChange = (event, selectedDate) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setSelectedReminderDate(selectedDate);
-      setShowTimePicker(true);
-    }
-  };
-
-  const onTimeChange = async (event, selectedTime) => {
-    setShowTimePicker(false);
-    if (selectedTime) {
-      const reminderDateTime = new Date(selectedReminderDate);
-      reminderDateTime.setHours(selectedTime.getHours(), selectedTime.getMinutes());
-      
-      // التحقق من أن الوقت في المستقبل للتذكير لمرة واحدة
-      if (reminderType === 'once' && reminderDateTime <= new Date()) {
-        Alert.alert('تنبيه', 'الرجاء اختيار وقت في المستقبل');
-        return;
-      }
-      
-      let trigger;
-      switch (reminderType) {
-        case 'once':
-          trigger = { date: reminderDateTime, channelId: 'reminders' };
-          break;
-        case 'daily':
-          trigger = {
-            hour: reminderDateTime.getHours(),
-            minute: reminderDateTime.getMinutes(),
-            repeats: true,
-            channelId: 'reminders',
-          };
-          break;
-        case 'weekly':
-          trigger = {
-            hour: reminderDateTime.getHours(),
-            minute: reminderDateTime.getMinutes(),
-            weekday: reminderDateTime.getDay() + 1,
-            repeats: true,
-            channelId: 'reminders',
-          };
-          break;
-        case 'monthly':
-          trigger = {
-            hour: reminderDateTime.getHours(),
-            minute: reminderDateTime.getMinutes(),
-            day: reminderDateTime.getDate(),
-            repeats: true,
-            channelId: 'reminders',
-          };
-          break;
-        default:
-          trigger = { date: reminderDateTime, channelId: 'reminders' };
-      }
-      
-      // تحديث الملاحظة بإضافة التذكير
-      const updatedFolders = folders.map(folder => 
-        folder.id === selectedFolder.id ? {
-          ...folder,
-          notes: folder.notes.map(note => 
-            note.id === reminderNoteId ? { 
-              ...note, 
-              reminder: reminderDateTime.toISOString(),
-              reminderType: reminderType
-            } : note
-          )
-        } : folder
-      );
-      
-      setFolders(updatedFolders);
-      saveFolders(updatedFolders);
-      
-      // جدولة الإشعار
-      const note = findNoteById(reminderNoteId);
-      if (note) {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: '📝 تذكير من تطبيق ملاحظات',
-            body: note.title,
-            sound: true,
-            data: { noteId: reminderNoteId },
-          },
-          trigger: trigger,
-        });
-      }
-      
-      Alert.alert('تم', 'تم تعيين التذكير بنجاح');
-    }
-    setReminderNoteId(null);
-  };
-
-  const removeReminder = async (noteId) => {
-    const updatedFolders = folders.map(folder => 
-      folder.id === selectedFolder.id ? {
-        ...folder,
-        notes: folder.notes.map(note => 
-          note.id === noteId ? { ...note, reminder: null, reminderType: null } : note
-        )
-      } : folder
-    );
-    
-    setFolders(updatedFolders);
-    saveFolders(updatedFolders);
-    
-    // إلغاء جميع الإشعارات (في تطبيق حقيقي، يمكن إلغاء إشعار محدد)
-    await Notifications.cancelAllScheduledNotificationsAsync();
-    
-    Alert.alert('تم', 'تم إلغاء التذكير');
-  };
-
-  // ==================== الروابط وقوائم المهام ====================
-  
   const addLink = () => {
     if (!linkInput.trim()) return;
     const finalName = linkName.trim() || 'رابط';
@@ -490,8 +492,6 @@ export default function App() {
     } catch (error) {}
   };
 
-  // ==================== نظام القفل ====================
-  
   const showLockSetup = () => {
     setLockPasswordInput('');
     setLockModalVisible(true);
@@ -548,6 +548,7 @@ export default function App() {
     });
     return { totalNotes, totalFolders: folders.length, totalWords, totalChecklists, totalLinks, totalReminders, totalTrash: trash.length, pinnedCount, favoriteCount };
   };
+  
   const stats = getStats();
 
   const colors = {
