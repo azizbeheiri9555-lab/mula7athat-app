@@ -4,13 +4,8 @@
     "slug": "mula7athat",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
-    "ios": {
-      "supportsTablet": true
-    },
     "android": {
-      "package": "com.smartnotes.app",
-      "permissions": []
+      "package": "com.smartnotes.app"
     },
     "extra": {
       "eas": {
