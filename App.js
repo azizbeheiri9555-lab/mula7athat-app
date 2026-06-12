@@ -1,4 +1,4 @@
-// App.js - تطبيق ملاحظات متكامل
+// App.js - تطبيق ملاحظات متكامل مع معالج زر الرجوع
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList,
@@ -61,20 +61,56 @@ export default function App() {
   
   const [isBackingUp, setIsBackingUp] = useState(false);
 
-  useEffect(() => { loadData(); loadDarkMode(); setupBackHandler(); }, []);
+  useEffect(() => { loadData(); loadDarkMode(); }, []);
 
-  const setupBackHandler = () => {
+  // ==================== معالج زر الرجوع في الهاتف ====================
+  useEffect(() => {
     const backAction = () => {
-      if (selectedFolder) { setSelectedFolder(null); setSearchQuery(''); return true; }
-      if (showTrash) { setShowTrash(false); return true; }
-      if (showStats) { setShowStats(false); return true; }
-      if (lockModalVisible) { setLockModalVisible(false); return true; }
-      if (noteViewVisible) { setNoteViewVisible(false); return true; }
-      if (editModalVisible) { setEditModalVisible(false); return true; }
-      BackHandler.exitApp(); return true;
+      if (selectedFolder) {
+        // إذا كان هناك مجلد مفتوح، نغلق المجلد ونعود للقائمة الرئيسية
+        setSelectedFolder(null);
+        setNotes([]);
+        setSearchQuery('');
+        return true;
+      } else if (noteViewVisible) {
+        // إذا كانت نافذة عرض الملاحظة مفتوحة، نغلقها
+        setNoteViewVisible(false);
+        return true;
+      } else if (editModalVisible) {
+        // إذا كانت نافذة التعديل مفتوحة، نغلقها
+        setEditModalVisible(false);
+        return true;
+      } else if (showTrash) {
+        // إذا كانت سلة المحذوفات مفتوحة، نغلقها
+        setShowTrash(false);
+        return true;
+      } else if (showStats) {
+        // إذا كانت الإحصائيات مفتوحة، نغلقها
+        setShowStats(false);
+        return true;
+      } else if (lockModalVisible) {
+        // إذا كانت نافذة القفل مفتوحة، نغلقها
+        setLockModalVisible(false);
+        setLockPasswordInput('');
+        setUnlockPasswordInput('');
+        setPendingUnlockNote(null);
+        return true;
+      } else if (folderModalVisible) {
+        // إذا كانت نافذة إنشاء مجلد مفتوحة، نغلقها
+        setFolderModalVisible(false);
+        setEditingFolder(null);
+        setNewFolderName('');
+        return true;
+      } else {
+        // إذا كنا في الصفحة الرئيسية، نخرج من التطبيق
+        BackHandler.exitApp();
+        return true;
+      }
     };
-    BackHandler.addEventListener('hardwareBackPress', backAction);
-  };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [selectedFolder, noteViewVisible, editModalVisible, showTrash, showStats, lockModalVisible, folderModalVisible]);
 
   const loadData = async () => {
     try {
@@ -550,7 +586,7 @@ export default function App() {
         <TouchableOpacity style={[styles.backupBtn, { backgroundColor: colors.primary }]} onPress={backupData}><Text style={styles.backupBtnText}>💾 نسخ احتياطي</Text></TouchableOpacity>
       )}
       
-      {/* باقي النوافذ */}
+      {/* نافذة إنشاء مجلد */}
       <Modal visible={folderModalVisible} transparent>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContentSmall, { backgroundColor: colors.cardBg }]}>
@@ -565,6 +601,7 @@ export default function App() {
         </View>
       </Modal>
       
+      {/* نافذة تعديل ملاحظة */}
       <Modal visible={editModalVisible} transparent animationType="slide">
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
           <View style={[styles.modalContentLarge, { backgroundColor: colors.cardBg }]}>
