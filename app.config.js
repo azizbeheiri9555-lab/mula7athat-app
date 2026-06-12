@@ -6,27 +6,13 @@ export default {
     version: "1.0.0",
     orientation: "portrait",
     userInterfaceStyle: "automatic",
-    icon: "./assets/icon.png",
-    splash: {
-      image: "./assets/splash.png",
-      resizeMode: "contain",
-      backgroundColor: "#6c63ff"
-    },
-    assetBundlePatterns: ["**/*"],
+    // لا تحتاج إلى كتابة سطر icon أو splash، Expo سيستخدم الافتراضي
     ios: {
-      supportsTablet: true,
-      bundleIdentifier: "com.smartnotes.app"
+      supportsTablet: true
     },
     android: {
       package: "com.smartnotes.app",
-      adaptiveIcon: {
-        foregroundImage: "./assets/adaptive-icon.png",
-        backgroundColor: "#6c63ff"
-      },
       permissions: []
-    },
-    web: {
-      favicon: "./assets/favicon.png"
     },
     extra: {
       eas: {
