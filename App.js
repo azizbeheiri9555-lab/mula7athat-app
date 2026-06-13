@@ -1,4 +1,4 @@
-// App.js - النسخة المستقرة التي عملت بنجاح (بدون تذكيرات)
+// App.js - نسخة معدلة مع تحسين النسخ الاحتياطي وزر الرجوع
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList,
@@ -61,47 +61,109 @@ export default function App() {
   
   const [isBackingUp, setIsBackingUp] = useState(false);
 
-  // معالج زر الرجوع
+  // ==================== تحميل البيانات مع البحث عن نسخة احتياطية ====================
+  useEffect(() => { 
+    loadData(); 
+    loadDarkMode();
+    checkForBackupOnFirstLaunch();
+  }, []);
+
+  // وظيفة جديدة: البحث عن نسخة احتياطية عند أول تشغيل
+  const checkForBackupOnFirstLaunch = async () => {
+    try {
+      // هل هذا أول تشغيل بعد التثبيت؟
+      const hasRunBefore = await AsyncStorage.getItem('@has_run_before');
+      
+      if (!hasRunBefore) {
+        // أول تشغيل - نبحث عن نسخة احتياطية
+        const backup = await AsyncStorage.getItem('@smart_backup');
+        if (backup) {
+          Alert.alert(
+            '💾 نسخة احتياطية موجودة',
+            'تم العثور على نسخة احتياطية سابقة. هل تريد استعادتها؟',
+            [
+              { text: 'لا', style: 'cancel' },
+              { 
+                text: 'نعم', 
+                onPress: async () => {
+                  const data = JSON.parse(backup);
+                  if (data.folders) {
+                    setFolders(data.folders);
+                    await AsyncStorage.setItem('@smart_folders_v15', JSON.stringify(data.folders));
+                  }
+                  if (data.trash) {
+                    setTrash(data.trash);
+                    await AsyncStorage.setItem('@smart_trash_v13', JSON.stringify(data.trash));
+                  }
+                  Alert.alert('✅ تم الاستعادة', 'تم استعادة البيانات من النسخة الاحتياطية');
+                }
+              }
+            ]
+          );
+        }
+        // نسجل أن التطبيق تم تشغيله مرة واحدة
+        await AsyncStorage.setItem('@has_run_before', 'true');
+      }
+    } catch (error) {
+      console.log('خطأ في البحث عن النسخة الاحتياطية');
+    }
+  };
+
+  // ==================== معالج زر الرجوع المحسن ====================
   useEffect(() => {
     const backAction = () => {
-      if (selectedFolder) {
-        setSelectedFolder(null);
-        setNotes([]);
-        setSearchQuery('');
-        return true;
-      } else if (noteViewVisible) {
+      // الأولوية القصوى: إغلاق نافذة عرض الملاحظة إذا كانت مفتوحة
+      if (noteViewVisible) {
         setNoteViewVisible(false);
         return true;
-      } else if (editModalVisible) {
+      }
+      // ثم نافذة التعديل
+      else if (editModalVisible) {
         setEditModalVisible(false);
         return true;
-      } else if (showTrash) {
+      }
+      // ثم سلة المحذوفات
+      else if (showTrash) {
         setShowTrash(false);
         return true;
-      } else if (showStats) {
+      }
+      // ثم الإحصائيات
+      else if (showStats) {
         setShowStats(false);
         return true;
-      } else if (lockModalVisible) {
+      }
+      // ثم نافذة القفل
+      else if (lockModalVisible) {
         setLockModalVisible(false);
         setLockPasswordInput('');
         setUnlockPasswordInput('');
         setPendingUnlockNote(null);
         return true;
-      } else if (folderModalVisible) {
+      }
+      // ثم نافذة إنشاء مجلد
+      else if (folderModalVisible) {
         setFolderModalVisible(false);
         setEditingFolder(null);
         setNewFolderName('');
         return true;
-      } else {
+      }
+      // ثم إذا كان مجلد مفتوح
+      else if (selectedFolder) {
+        setSelectedFolder(null);
+        setNotes([]);
+        setSearchQuery('');
+        return true;
+      }
+      // أخيراً الخروج من التطبيق
+      else {
         BackHandler.exitApp();
         return true;
       }
     };
+
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
-  }, [selectedFolder, noteViewVisible, editModalVisible, showTrash, showStats, lockModalVisible, folderModalVisible]);
-
-  useEffect(() => { loadData(); loadDarkMode(); }, []);
+  }, [noteViewVisible, editModalVisible, showTrash, showStats, lockModalVisible, folderModalVisible, selectedFolder]);
 
   const loadData = async () => {
     try {
