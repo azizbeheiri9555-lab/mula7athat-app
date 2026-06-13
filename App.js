@@ -1,4 +1,4 @@
-// App.js - نسخة معدلة مع تحسين النسخ الاحتياطي وزر الرجوع
+// App.js - تطبيق ملاحظات متكامل مع استعادة النسخة الاحتياطية تلقائياً
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList,
@@ -61,121 +61,156 @@ export default function App() {
   
   const [isBackingUp, setIsBackingUp] = useState(false);
 
-  // ==================== تحميل البيانات مع البحث عن نسخة احتياطية ====================
-  useEffect(() => { 
-    loadData(); 
-    loadDarkMode();
-    checkForBackupOnFirstLaunch();
-  }, []);
+  // ==================== دوال النسخ الاحتياطي والاستعادة ====================
 
-  // وظيفة جديدة: البحث عن نسخة احتياطية عند أول تشغيل
+  // البحث عن نسخة احتياطية عند أول تشغيل
   const checkForBackupOnFirstLaunch = async () => {
     try {
-      // هل هذا أول تشغيل بعد التثبيت؟
-      const hasRunBefore = await AsyncStorage.getItem('@has_run_before');
+      // هل هذه أول مرة يفتح فيها التطبيق؟
+      const hasLaunchedBefore = await AsyncStorage.getItem('@has_launched_before');
       
-      if (!hasRunBefore) {
-        // أول تشغيل - نبحث عن نسخة احتياطية
+      if (hasLaunchedBefore === null) {
+        // هذه أول مرة - نبحث عن نسخة احتياطية
         const backup = await AsyncStorage.getItem('@smart_backup');
+        
         if (backup) {
+          // يوجد نسخة احتياطية! نسأل المستخدم
           Alert.alert(
-            '💾 نسخة احتياطية موجودة',
+            '📦 نسخة احتياطية موجودة',
             'تم العثور على نسخة احتياطية سابقة. هل تريد استعادتها؟',
             [
-              { text: 'لا', style: 'cancel' },
-              { 
-                text: 'نعم', 
-                onPress: async () => {
-                  const data = JSON.parse(backup);
-                  if (data.folders) {
-                    setFolders(data.folders);
-                    await AsyncStorage.setItem('@smart_folders_v15', JSON.stringify(data.folders));
-                  }
-                  if (data.trash) {
-                    setTrash(data.trash);
-                    await AsyncStorage.setItem('@smart_trash_v13', JSON.stringify(data.trash));
-                  }
-                  Alert.alert('✅ تم الاستعادة', 'تم استعادة البيانات من النسخة الاحتياطية');
-                }
-              }
+              { text: 'لا، بدء جديد', onPress: () => createDefaultData() },
+              { text: 'نعم، استعادة', onPress: () => restoreBackupOnFirstLaunch() }
             ]
           );
+        } else {
+          // لا توجد نسخة احتياطية - ننشئ بيانات افتراضية
+          await createDefaultData();
         }
-        // نسجل أن التطبيق تم تشغيله مرة واحدة
-        await AsyncStorage.setItem('@has_run_before', 'true');
+        
+        // نسجل أن التطبيق تم تشغيله مرة واحدة على الأقل
+        await AsyncStorage.setItem('@has_launched_before', 'true');
       }
     } catch (error) {
       console.log('خطأ في البحث عن النسخة الاحتياطية');
     }
   };
 
-  // ==================== معالج زر الرجوع المحسن ====================
+  // استعادة النسخة الاحتياطية عند أول تشغيل
+  const restoreBackupOnFirstLaunch = async () => {
+    try {
+      const backup = await AsyncStorage.getItem('@smart_backup');
+      if (backup) {
+        const data = JSON.parse(backup);
+        if (data.folders) {
+          setFolders(data.folders);
+          await AsyncStorage.setItem('@smart_folders_v15', JSON.stringify(data.folders));
+        }
+        if (data.trash) {
+          setTrash(data.trash);
+          await AsyncStorage.setItem('@smart_trash_v13', JSON.stringify(data.trash));
+        }
+        Alert.alert('✅ تم الاستعادة', 'تم استعادة ملاحظاتك السابقة بنجاح');
+      }
+    } catch (error) {
+      Alert.alert('خطأ', 'فشل استعادة النسخة الاحتياطية');
+      await createDefaultData();
+    }
+  };
+
+  // استعادة النسخة الاحتياطية يدوياً
+  const restoreBackupManually = async () => {
+    try {
+      const backup = await AsyncStorage.getItem('@smart_backup');
+      if (backup) {
+        const data = JSON.parse(backup);
+        if (data.folders) {
+          setFolders(data.folders);
+          await AsyncStorage.setItem('@smart_folders_v15', JSON.stringify(data.folders));
+          if (selectedFolder) {
+            const updatedFolder = data.folders.find(f => f.id === selectedFolder.id);
+            if (updatedFolder) setSelectedFolder(updatedFolder);
+          }
+        }
+        if (data.trash) {
+          setTrash(data.trash);
+          await AsyncStorage.setItem('@smart_trash_v13', JSON.stringify(data.trash));
+        }
+        Alert.alert('✅ تم الاستعادة', 'تم استعادة النسخة الاحتياطية بنجاح');
+      } else {
+        Alert.alert('تنبيه', 'لا توجد نسخة احتياطية سابقة');
+      }
+    } catch (error) {
+      Alert.alert('خطأ', 'فشل استعادة النسخة الاحتياطية');
+    }
+  };
+
+  // إنشاء البيانات الافتراضية
+  const createDefaultData = async () => {
+    const defaultFolders = [
+      { id: '1', name: 'العمل', color: COLORS[2], notes: [] },
+      { id: '2', name: 'شخصي', color: COLORS[1], notes: [] },
+    ];
+    setFolders(defaultFolders);
+    await AsyncStorage.setItem('@smart_folders_v15', JSON.stringify(defaultFolders));
+    setTrash([]);
+    await AsyncStorage.setItem('@smart_trash_v13', JSON.stringify([]));
+  };
+
+  // ==================== معالج زر الرجوع ====================
   useEffect(() => {
     const backAction = () => {
-      // الأولوية القصوى: إغلاق نافذة عرض الملاحظة إذا كانت مفتوحة
-      if (noteViewVisible) {
+      if (selectedFolder) {
+        setSelectedFolder(null);
+        setNotes([]);
+        setSearchQuery('');
+        return true;
+      } else if (noteViewVisible) {
         setNoteViewVisible(false);
         return true;
-      }
-      // ثم نافذة التعديل
-      else if (editModalVisible) {
+      } else if (editModalVisible) {
         setEditModalVisible(false);
         return true;
-      }
-      // ثم سلة المحذوفات
-      else if (showTrash) {
+      } else if (showTrash) {
         setShowTrash(false);
         return true;
-      }
-      // ثم الإحصائيات
-      else if (showStats) {
+      } else if (showStats) {
         setShowStats(false);
         return true;
-      }
-      // ثم نافذة القفل
-      else if (lockModalVisible) {
+      } else if (lockModalVisible) {
         setLockModalVisible(false);
         setLockPasswordInput('');
         setUnlockPasswordInput('');
         setPendingUnlockNote(null);
         return true;
-      }
-      // ثم نافذة إنشاء مجلد
-      else if (folderModalVisible) {
+      } else if (folderModalVisible) {
         setFolderModalVisible(false);
         setEditingFolder(null);
         setNewFolderName('');
         return true;
-      }
-      // ثم إذا كان مجلد مفتوح
-      else if (selectedFolder) {
-        setSelectedFolder(null);
-        setNotes([]);
-        setSearchQuery('');
-        return true;
-      }
-      // أخيراً الخروج من التطبيق
-      else {
+      } else {
         BackHandler.exitApp();
         return true;
       }
     };
-
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
-  }, [noteViewVisible, editModalVisible, showTrash, showStats, lockModalVisible, folderModalVisible, selectedFolder]);
+  }, [selectedFolder, noteViewVisible, editModalVisible, showTrash, showStats, lockModalVisible, folderModalVisible]);
+
+  // تحميل البيانات عند بدء التطبيق
+  useEffect(() => { 
+    loadData(); 
+    loadDarkMode(); 
+  }, []);
 
   const loadData = async () => {
     try {
       const savedFolders = await AsyncStorage.getItem('@smart_folders_v15');
-      if (savedFolders) setFolders(JSON.parse(savedFolders));
-      else {
-        const defaultFolders = [
-          { id: '1', name: 'العمل', color: COLORS[2], notes: [] },
-          { id: '2', name: 'شخصي', color: COLORS[1], notes: [] },
-        ];
-        setFolders(defaultFolders);
-        await AsyncStorage.setItem('@smart_folders_v15', JSON.stringify(defaultFolders));
+      if (savedFolders) {
+        setFolders(JSON.parse(savedFolders));
+      } else {
+        // أول تشغيل - نبحث عن نسخة احتياطية
+        await checkForBackupOnFirstLaunch();
       }
       const savedTrash = await AsyncStorage.getItem('@smart_trash_v13');
       if (savedTrash) setTrash(JSON.parse(savedTrash));
@@ -588,6 +623,14 @@ export default function App() {
             <View style={styles.statItem}><Text style={[styles.statNumber, { color: '#f59e0b' }]}>{stats.pinnedCount}</Text><Text>مثبتة</Text></View>
             <View style={styles.statItem}><Text style={[styles.statNumber, { color: '#10b981' }]}>{stats.favoriteCount}</Text><Text>مفضلة</Text></View>
           </View>
+          
+          {/* زر استعادة النسخة الاحتياطية */}
+          <TouchableOpacity 
+            style={[styles.backupRestoreBtn, { backgroundColor: colors.primary, marginTop: 15 }]} 
+            onPress={restoreBackupManually}
+          >
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>📦 استعادة نسخة احتياطية</Text>
+          </TouchableOpacity>
         </View>
       )}
       
@@ -752,6 +795,7 @@ const styles = StyleSheet.create({
   fabText: { fontSize: 32, color: '#fff', fontWeight: 'bold' },
   backupBtn: { position: 'absolute', bottom: 25, left: 25, paddingHorizontal: 15, paddingVertical: 12, borderRadius: 25 },
   backupBtnText: { color: '#fff', fontWeight: 'bold' },
+  backupRestoreBtn: { padding: 12, borderRadius: 10, alignItems: 'center' },
   
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
   modalContentSmall: { borderRadius: 20, padding: 20 },
