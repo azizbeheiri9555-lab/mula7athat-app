@@ -20,7 +20,7 @@ export default {
     plugins: ["expo-notifications"],
     extra: {
       eas: {
-        projectId: "255b4627-77dd-4faa-a19b-371d3f0a508c"
+        projectId: "645ea13c-bd68-4405-9320-ea48213609b6"
       }
     }
   }
