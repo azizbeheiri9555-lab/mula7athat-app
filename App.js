@@ -1,4 +1,4 @@
-// App.js - تطبيق ملاحظات مع نسخ احتياطي خارجي (يظل بعد إلغاء التثبيت)
+// App.js - تطبيق ملاحظات مع نسخ احتياطي خارجي وزر استعادة في الشاشة الرئيسية
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList,
@@ -638,14 +638,6 @@ export default function App() {
             <View style={styles.statItem}><Text style={[styles.statNumber, { color: '#f59e0b' }]}>{stats.pinnedCount}</Text><Text>مثبتة</Text></View>
             <View style={styles.statItem}><Text style={[styles.statNumber, { color: '#10b981' }]}>{stats.favoriteCount}</Text><Text>مفضلة</Text></View>
           </View>
-          
-          {/* زر استعادة النسخة الاحتياطية من الملف الخارجي */}
-          <TouchableOpacity 
-            style={[styles.backupRestoreBtn, { backgroundColor: colors.warning, marginTop: 15, padding: 12, borderRadius: 10, alignItems: 'center' }]} 
-            onPress={restoreFromExternalManually}
-          >
-            <Text style={{ color: '#fff', fontWeight: 'bold' }}>📁 استعادة من ملف الجهاز</Text>
-          </TouchableOpacity>
         </View>
       )}
       
@@ -687,10 +679,17 @@ export default function App() {
       )}
       
       <TouchableOpacity style={styles.fab} onPress={selectedFolder ? addNote : () => setFolderModalVisible(true)}><Text style={styles.fabText}>+</Text></TouchableOpacity>
+      
+      {/* أزرار النسخ الاحتياطي والاستعادة في الشاشة الرئيسية */}
       {!selectedFolder && !showTrash && !showStats && (
-        <TouchableOpacity style={[styles.backupBtn, { backgroundColor: colors.primary }]} onPress={saveBackupToDevice}>
-          <Text style={styles.backupBtnText}>💾 نسخ احتياطي</Text>
-        </TouchableOpacity>
+        <View style={{ position: 'absolute', bottom: 25, left: 25, flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity style={[styles.backupBtn, { backgroundColor: colors.primary }]} onPress={saveBackupToDevice}>
+            <Text style={styles.backupBtnText}>💾 نسخ احتياطي</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.backupBtn, { backgroundColor: colors.warning }]} onPress={restoreFromExternalManually}>
+            <Text style={styles.backupBtnText}>📁 استعادة</Text>
+          </TouchableOpacity>
+        </View>
       )}
       
       <Modal visible={folderModalVisible} transparent>
@@ -810,9 +809,8 @@ const styles = StyleSheet.create({
   emptyButtonText: { color: '#fff', fontWeight: 'bold' },
   fab: { position: 'absolute', bottom: 25, right: 25, width: 60, height: 60, borderRadius: 30, backgroundColor: '#6c63ff', justifyContent: 'center', alignItems: 'center', elevation: 5 },
   fabText: { fontSize: 32, color: '#fff', fontWeight: 'bold' },
-  backupBtn: { position: 'absolute', bottom: 25, left: 25, paddingHorizontal: 15, paddingVertical: 12, borderRadius: 25 },
+  backupBtn: { paddingHorizontal: 15, paddingVertical: 12, borderRadius: 25 },
   backupBtnText: { color: '#fff', fontWeight: 'bold' },
-  backupRestoreBtn: { padding: 12, borderRadius: 10, alignItems: 'center' },
   
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
   modalContentSmall: { borderRadius: 20, padding: 20 },
