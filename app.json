@@ -4,9 +4,21 @@
     "slug": "mula7athat",
     "version": "1.0.0",
     "orientation": "portrait",
-    "android": {
-      "package": "com.smartnotes.app"
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true
     },
+    "android": {
+      "package": "com.smartnotes.app",
+      "permissions": [
+        "android.permission.VIBRATE",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      "expo-notifications"
+    ],
     "extra": {
       "eas": {
         "projectId": "255b4627-77dd-4faa-a19b-371d3f0a508c"
