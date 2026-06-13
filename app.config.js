@@ -2,7 +2,7 @@
 export default {
   expo: {
     name: "ملاحظات",
-    slug: "mula7athat",
+    slug: "mula8athat",
     version: "1.0.0",
     orientation: "portrait",
     userInterfaceStyle: "automatic",
