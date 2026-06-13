@@ -1,8 +1,8 @@
 // app.config.js
 export default {
   expo: {
-    name: "الملاحظات",
-    slug: "mula8athat",
+    name: "ملاحظات",
+    slug: "mula7athat",
     version: "1.0.0",
     orientation: "portrait",
     userInterfaceStyle: "automatic",
