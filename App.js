@@ -1,4 +1,4 @@
-// App.js - تطبيق ملاحظات متكامل مع استعادة النسخة الاحتياطية تلقائياً
+// App.js - تطبيق ملاحظات مع نسخ احتياطي خارجي (يظل بعد إلغاء التثبيت)
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList,
@@ -6,6 +6,7 @@ import {
   KeyboardAvoidingView, Platform, Dimensions
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
 
 const COLORS = [
   { id: 'white', name: 'أبيض', bg: '#ffffff', text: '#333333', icon: '⚪' },
@@ -61,87 +62,105 @@ export default function App() {
   
   const [isBackingUp, setIsBackingUp] = useState(false);
 
-  // ==================== دوال النسخ الاحتياطي والاستعادة ====================
+  // ==================== مسار النسخة الاحتياطية الخارجية ====================
+  const getBackupPath = () => {
+    return FileSystem.documentDirectory + 'notes_backup.json';
+  };
+
+  // ==================== دوال النسخ الاحتياطي الخارجي ====================
+
+  // حفظ نسخة احتياطية في الذاكرة الخارجية
+  const saveBackupToDevice = async () => {
+    setIsBackingUp(true);
+    try {
+      const backup = {
+        folders,
+        trash,
+        date: new Date().toISOString(),
+        version: '2.0'
+      };
+      
+      const backupPath = getBackupPath();
+      await FileSystem.writeAsStringAsync(backupPath, JSON.stringify(backup));
+      
+      // أيضاً نحفظ في AsyncStorage كنسخة احتياطية داخلية
+      await AsyncStorage.setItem('@smart_backup', JSON.stringify(backup));
+      
+      Alert.alert('✅ نجاح', 'تم حفظ النسخة الاحتياطية على جهازك');
+    } catch (error) {
+      Alert.alert('خطأ', 'فشل حفظ النسخة الاحتياطية: ' + error.message);
+    }
+    setIsBackingUp(false);
+  };
 
   // البحث عن نسخة احتياطية عند أول تشغيل
-  const checkForBackupOnFirstLaunch = async () => {
+  const checkForExternalBackup = async () => {
     try {
-      // هل هذه أول مرة يفتح فيها التطبيق؟
-      const hasLaunchedBefore = await AsyncStorage.getItem('@has_launched_before');
+      const backupPath = getBackupPath();
+      const backupExists = await FileSystem.getInfoAsync(backupPath);
       
-      if (hasLaunchedBefore === null) {
-        // هذه أول مرة - نبحث عن نسخة احتياطية
-        const backup = await AsyncStorage.getItem('@smart_backup');
+      if (backupExists.exists) {
+        const backupContent = await FileSystem.readAsStringAsync(backupPath);
+        const backup = JSON.parse(backupContent);
         
-        if (backup) {
-          // يوجد نسخة احتياطية! نسأل المستخدم
-          Alert.alert(
-            '📦 نسخة احتياطية موجودة',
-            'تم العثور على نسخة احتياطية سابقة. هل تريد استعادتها؟',
-            [
-              { text: 'لا، بدء جديد', onPress: () => createDefaultData() },
-              { text: 'نعم، استعادة', onPress: () => restoreBackupOnFirstLaunch() }
-            ]
-          );
-        } else {
-          // لا توجد نسخة احتياطية - ننشئ بيانات افتراضية
-          await createDefaultData();
-        }
-        
-        // نسجل أن التطبيق تم تشغيله مرة واحدة على الأقل
-        await AsyncStorage.setItem('@has_launched_before', 'true');
+        Alert.alert(
+          '📦 تم العثور على نسخة احتياطية',
+          `تاريخ النسخة: ${new Date(backup.date).toLocaleString('ar-SA')}\nهل تريد استعادتها؟`,
+          [
+            { text: 'لا، بدء جديد', onPress: () => createDefaultData() },
+            { text: 'نعم، استعادة', onPress: () => restoreFromExternalBackup(backup) }
+          ]
+        );
+        return true;
       }
+      return false;
     } catch (error) {
-      console.log('خطأ في البحث عن النسخة الاحتياطية');
+      console.log('خطأ في البحث عن النسخة الاحتياطية:', error);
+      return false;
     }
   };
 
-  // استعادة النسخة الاحتياطية عند أول تشغيل
-  const restoreBackupOnFirstLaunch = async () => {
+  // استعادة النسخة الاحتياطية من الملف الخارجي
+  const restoreFromExternalBackup = async (backup) => {
     try {
-      const backup = await AsyncStorage.getItem('@smart_backup');
-      if (backup) {
-        const data = JSON.parse(backup);
-        if (data.folders) {
-          setFolders(data.folders);
-          await AsyncStorage.setItem('@smart_folders_v15', JSON.stringify(data.folders));
-        }
-        if (data.trash) {
-          setTrash(data.trash);
-          await AsyncStorage.setItem('@smart_trash_v13', JSON.stringify(data.trash));
-        }
-        Alert.alert('✅ تم الاستعادة', 'تم استعادة ملاحظاتك السابقة بنجاح');
+      if (backup.folders) {
+        setFolders(backup.folders);
+        await AsyncStorage.setItem('@smart_folders_v15', JSON.stringify(backup.folders));
       }
+      if (backup.trash) {
+        setTrash(backup.trash);
+        await AsyncStorage.setItem('@smart_trash_v13', JSON.stringify(backup.trash));
+      }
+      
+      Alert.alert('✅ تم الاستعادة', 'تم استعادة ملاحظاتك السابقة بنجاح');
     } catch (error) {
       Alert.alert('خطأ', 'فشل استعادة النسخة الاحتياطية');
-      await createDefaultData();
     }
   };
 
-  // استعادة النسخة الاحتياطية يدوياً
-  const restoreBackupManually = async () => {
+  // استعادة يدوية من ملف خارجي
+  const restoreFromExternalManually = async () => {
     try {
-      const backup = await AsyncStorage.getItem('@smart_backup');
-      if (backup) {
-        const data = JSON.parse(backup);
-        if (data.folders) {
-          setFolders(data.folders);
-          await AsyncStorage.setItem('@smart_folders_v15', JSON.stringify(data.folders));
-          if (selectedFolder) {
-            const updatedFolder = data.folders.find(f => f.id === selectedFolder.id);
-            if (updatedFolder) setSelectedFolder(updatedFolder);
-          }
-        }
-        if (data.trash) {
-          setTrash(data.trash);
-          await AsyncStorage.setItem('@smart_trash_v13', JSON.stringify(data.trash));
-        }
-        Alert.alert('✅ تم الاستعادة', 'تم استعادة النسخة الاحتياطية بنجاح');
+      const backupPath = getBackupPath();
+      const backupExists = await FileSystem.getInfoAsync(backupPath);
+      
+      if (backupExists.exists) {
+        const backupContent = await FileSystem.readAsStringAsync(backupPath);
+        const backup = JSON.parse(backupContent);
+        
+        Alert.alert(
+          'استعادة النسخة الاحتياطية',
+          `تاريخ النسخة: ${new Date(backup.date).toLocaleString('ar-SA')}\nسيتم استبدال الملاحظات الحالية. هل أنت متأكد؟`,
+          [
+            { text: 'إلغاء', style: 'cancel' },
+            { text: 'استعادة', onPress: () => restoreFromExternalBackup(backup) }
+          ]
+        );
       } else {
-        Alert.alert('تنبيه', 'لا توجد نسخة احتياطية سابقة');
+        Alert.alert('تنبيه', 'لا توجد نسخة احتياطية على الجهاز');
       }
     } catch (error) {
-      Alert.alert('خطأ', 'فشل استعادة النسخة الاحتياطية');
+      Alert.alert('خطأ', 'فشل قراءة النسخة الاحتياطية');
     }
   };
 
@@ -209,12 +228,18 @@ export default function App() {
       if (savedFolders) {
         setFolders(JSON.parse(savedFolders));
       } else {
-        // أول تشغيل - نبحث عن نسخة احتياطية
-        await checkForBackupOnFirstLaunch();
+        // أول تشغيل - نبحث عن نسخة احتياطية خارجية أولاً
+        const hasExternalBackup = await checkForExternalBackup();
+        if (!hasExternalBackup) {
+          // لا توجد نسخة احتياطية - ننشئ بيانات افتراضية
+          await createDefaultData();
+        }
       }
       const savedTrash = await AsyncStorage.getItem('@smart_trash_v13');
       if (savedTrash) setTrash(JSON.parse(savedTrash));
-    } catch (error) {}
+    } catch (error) {
+      console.log('خطأ في تحميل البيانات:', error);
+    }
   };
 
   const saveFolders = async (newFolders) => { await AsyncStorage.setItem('@smart_folders_v15', JSON.stringify(newFolders)); };
@@ -429,16 +454,6 @@ export default function App() {
     }
   };
 
-  const backupData = async () => {
-    setIsBackingUp(true);
-    try {
-      const backup = { folders, trash, date: new Date().toISOString() };
-      await AsyncStorage.setItem('@smart_backup', JSON.stringify(backup));
-      Alert.alert('✅ نسخ احتياطي', 'تم إنشاء نسخة احتياطية');
-    } catch (error) { Alert.alert('خطأ', 'فشل النسخ الاحتياطي'); }
-    setIsBackingUp(false);
-  };
-
   const getStats = () => {
     let totalNotes = 0, totalWords = 0, totalChecklists = 0, totalLinks = 0;
     let pinnedCount = 0, favoriteCount = 0;
@@ -624,12 +639,12 @@ export default function App() {
             <View style={styles.statItem}><Text style={[styles.statNumber, { color: '#10b981' }]}>{stats.favoriteCount}</Text><Text>مفضلة</Text></View>
           </View>
           
-          {/* زر استعادة النسخة الاحتياطية */}
+          {/* زر استعادة النسخة الاحتياطية من الملف الخارجي */}
           <TouchableOpacity 
-            style={[styles.backupRestoreBtn, { backgroundColor: colors.primary, marginTop: 15 }]} 
-            onPress={restoreBackupManually}
+            style={[styles.backupRestoreBtn, { backgroundColor: colors.warning, marginTop: 15, padding: 12, borderRadius: 10, alignItems: 'center' }]} 
+            onPress={restoreFromExternalManually}
           >
-            <Text style={{ color: '#fff', fontWeight: 'bold' }}>📦 استعادة نسخة احتياطية</Text>
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>📁 استعادة من ملف الجهاز</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -673,7 +688,9 @@ export default function App() {
       
       <TouchableOpacity style={styles.fab} onPress={selectedFolder ? addNote : () => setFolderModalVisible(true)}><Text style={styles.fabText}>+</Text></TouchableOpacity>
       {!selectedFolder && !showTrash && !showStats && (
-        <TouchableOpacity style={[styles.backupBtn, { backgroundColor: colors.primary }]} onPress={backupData}><Text style={styles.backupBtnText}>💾 نسخ احتياطي</Text></TouchableOpacity>
+        <TouchableOpacity style={[styles.backupBtn, { backgroundColor: colors.primary }]} onPress={saveBackupToDevice}>
+          <Text style={styles.backupBtnText}>💾 نسخ احتياطي</Text>
+        </TouchableOpacity>
       )}
       
       <Modal visible={folderModalVisible} transparent>
